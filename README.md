@@ -78,6 +78,7 @@ First run takes ~2–3 minutes (pip installs, dataset generation, model training
 | Service | URL |
 |---------|-----|
 | **Dashboard** | http://localhost:3000 |
+| **Deploy Web App** | https://digital-twin.up.railway.app/ |
 | **API docs** | http://localhost:8000/docs |
 | **API root** | http://localhost:8000/ |
 
