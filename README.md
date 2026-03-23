@@ -7,15 +7,15 @@ A minimal, end-to-end predictive digital twin prototype that models a single ser
 ## Architecture Overview
 
 ```
-┌──────────────────────┐     HTTP (port 3000)     ┌───────────────────┐
+┌──────────────────────┐     HTTP (port 3000)      ┌───────────────────┐
 │  Browser / Frontend  │ ────────────────────────▶ │   Nginx (Docker)  │
 │  (Vanilla JS + CSS)  │                           │   serves HTML     │
 └──────────────────────┘                           └─────────┬─────────┘
                                                              │ /api/* proxy
                                                              ▼
                                                    ┌───────────────────┐
-                                                   │  FastAPI Backend   │
-                                                   │  (Docker, :8000)   │
+                                                   │  FastAPI Backend  │
+                                                   │ (Docker, Railway) │
                                                    │  ┌─────────────┐  │
                                                    │  │ GBR Model   │  │
                                                    │  │ (scikit-    │  │
