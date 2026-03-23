@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Server Digital Twin — NEXUS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+/* ── Design tokens ──────────────────────────────────────────────────────── */
+:root {
+  --bg:        #050810;
+  --bg2:       #080d1a;
+  --panel:     #0b1225;
+  --border:    #1a2a4a;
+  --border2:   #243050;
+  --accent:    #00e5ff;
+  --accent2:   #ff6b35;
+  --green:     #00ff9d;
+  --yellow:    #ffd600;
+  --red:       #ff3860;
+  --purple:    #b388ff;
+  --text:      #c8d8f0;
+  --text-dim:  #5a7090;
+  --text-bright: #e8f4ff;
+  --glow:      0 0 20px rgba(0,229,255,0.15);
+  --glow-accent: 0 0 30px rgba(0,229,255,0.3);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  overflow-x: hidden;
+}
+
+/* ── Scanline overlay ─────────────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.07) 2px,
+    rgba(0,0,0,0.07) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Grid noise texture ──────────────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 20%, rgba(0,100,200,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 80% 80%, rgba(0,229,255,0.04) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 60px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(0,229,255,0.04) 0%, transparent 100%);
+  position: sticky; top: 0; z-index: 100;
+  backdrop-filter: blur(10px);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  width: 36px; height: 36px;
+  position: relative;
+}
+
+.logo-icon svg { width: 100%; height: 100%; }
+
+.logo-text {
+  font-family: 'Orbitron', monospace;
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 4px;
+  color: var(--accent);
+  text-shadow: 0 0 20px rgba(0,229,255,0.5);
+}
+
+.logo-sub {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  margin-top: 2px;
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px currentColor; }
+  50%       { opacity: 0.5; box-shadow: 0 0 3px currentColor; }
+}
+
+.clock {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+
+/* ── Main layout ─────────────────────────────────────────────────────── */
+main {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 0;
+  min-height: calc(100vh - 60px);
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+.sidebar {
+  grid-row: 1 / 3;
+  border-right: 1px solid var(--border);
+  background: var(--bg2);
+  padding: 20px 0;
+  overflow-y: auto;
+}
+
+.sidebar-section {
+  padding: 0 16px 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.sidebar-label {
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Live gauge */
+.gauge-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gauge-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gauge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.gauge-name {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+
+.gauge-value {
+  font-family: 'Orbitron', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+.gauge-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.gauge-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.gauge-fill::after {
+  content: '';
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: white;
+  opacity: 0.6;
+  border-radius: 2px;
+  box-shadow: 0 0 4px white;
+}
+
+/* ── Prediction card ────────────────────────────────────────────────── */
+.pred-card {
+  background: linear-gradient(135deg, rgba(0,229,255,0.05) 0%, rgba(0,229,255,0.02) 100%);
+  border: 1px solid rgba(0,229,255,0.2);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.pred-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.pred-value {
+  font-family: 'Orbitron', monospace;
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--accent);
+  text-shadow: 0 0 20px rgba(0,229,255,0.5);
+  line-height: 1;
+}
+
+.pred-unit { font-size: 14px; opacity: 0.6; }
+
+.pred-delta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.delta-up   { color: var(--red); }
+.delta-down { color: var(--green); }
+.delta-flat { color: var(--text-dim); }
+
+/* ── Manual predict form ────────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+
+.field input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border2);
+  border-radius: 2px;
+  outline: none;
+}
+
+.field input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.field-val {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  color: var(--text-bright);
+  text-align: right;
+}
+
+.btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  opacity: 0.1;
+}
+
+.btn:hover::before { transform: translateX(0); }
+.btn:hover { box-shadow: 0 0 15px rgba(0,229,255,0.3); }
+.btn:active { transform: scale(0.98); }
+
+.btn-orange {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+.btn-orange::before { background: var(--accent2); }
+.btn-orange:hover { box-shadow: 0 0 15px rgba(255,107,53,0.3); }
+
+/* ── Content area ────────────────────────────────────────────────────── */
+.content {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+}
+
+/* ── Panel ───────────────────────────────────────────────────────────── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,0.2);
+}
+
+.panel-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--accent);
+}
+
+.panel-badge {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(0,229,255,0.1);
+  border: 1px solid rgba(0,229,255,0.2);
+  color: var(--accent);
+}
+
+.panel-body { padding: 16px; }
+
+/* ── KPI row ─────────────────────────────────────────────────────────── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.kpi {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+
+.kpi::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+
+.kpi.blue::before   { background: var(--accent); }
+.kpi.orange::before { background: var(--accent2); }
+.kpi.green::before  { background: var(--green); }
+.kpi.purple::before { background: var(--purple); }
+
+.kpi-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+}
+
+.kpi-val {
+  font-family: 'Orbitron', monospace;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-bright);
+  line-height: 1;
+}
+
+.kpi-unit {
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.kpi-sub {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* ── Charts ──────────────────────────────────────────────────────────── */
+canvas {
+  display: block;
+  width: 100% !important;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+}
+
+thead th {
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+  background: var(--panel);
+}
+
+tbody tr {
+  border-bottom: 1px solid rgba(26,42,74,0.4);
+  transition: background 0.15s;
+}
+
+tbody tr:hover { background: rgba(0,229,255,0.03); }
+
+td {
+  padding: 7px 12px;
+  color: var(--text);
+}
+
+td.hot   { color: var(--red); }
+td.warm  { color: var(--yellow); }
+td.cool  { color: var(--green); }
+td.pred  { color: var(--accent); font-weight: bold; }
+
+/* ── Alert bar ───────────────────────────────────────────────────────── */
+.alert-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: rgba(255,56,96,0.1);
+  border: 1px solid rgba(255,56,96,0.4);
+  border-radius: 6px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: var(--red);
+  animation: blink 1s step-end infinite;
+}
+
+.alert-bar.show { display: flex; }
+
+@keyframes blink {
+  50% { opacity: 0.6; }
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+.tab-row {
+  display: flex;
+  gap: 4px;
+  padding: 12px 16px 0;
+}
+
+.tab {
+  padding: 6px 16px;
+  font-family: 'Orbitron', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── Spinner ─────────────────────────────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Server 3D icon ──────────────────────────────────────────────────── */
+.server-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px;
+}
+
+.rack-unit {
+  width: 160px;
+  height: 18px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  background: linear-gradient(180deg, #0e1a30 0%, #080d1a 100%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.rack-unit.active {
+  border-color: rgba(0,229,255,0.4);
+  box-shadow: 0 0 10px rgba(0,229,255,0.15);
+}
+
+.rack-light {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 4px var(--green);
+  flex-shrink: 0;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.rack-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.rack-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), rgba(0,229,255,0.3));
+  border-radius: 1px;
+  transition: width 1s ease;
+}
+
+.rack-temp-badge {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 8px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  main { grid-template-columns: 240px 1fr; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .chart-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="6" width="32" height="8" rx="1" stroke="#00e5ff" stroke-width="1.2"/>
+        <rect x="2" y="16" width="32" height="8" rx="1" stroke="#00e5ff" stroke-width="1.2"/>
+        <rect x="2" y="26" width="32" height="6" rx="1" stroke="#00e5ff" stroke-width="1.2" opacity="0.5"/>
+        <circle cx="6" cy="10" r="1.5" fill="#00ff9d"/>
+        <circle cx="6" cy="20" r="1.5" fill="#00ff9d"/>
+        <circle cx="6" cy="29" r="1.5" fill="#ffd600" opacity="0.6"/>
+        <rect x="10" y="8.5" width="16" height="3" rx="0.5" fill="rgba(0,229,255,0.15)" stroke="rgba(0,229,255,0.3)" stroke-width="0.5"/>
+        <rect x="10" y="18.5" width="16" height="3" rx="0.5" fill="rgba(0,229,255,0.15)" stroke="rgba(0,229,255,0.3)" stroke-width="0.5"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-text">NEXUS</div>
+      <div class="logo-sub">PREDICTIVE DIGITAL TWIN</div>
+    </div>
+  </div>
+
+  <div class="header-status">
+    <div class="status-indicator">
+      <div class="status-dot" style="color:var(--green)"></div>
+      <span>TWIN ONLINE</span>
+    </div>
+    <div class="status-indicator" id="model-status">
+      <div class="status-dot" style="color:var(--yellow); background:var(--yellow); box-shadow:0 0 8px var(--yellow);"></div>
+      <span>MODEL LOADING</span>
+    </div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+</header>
+
+<!-- ── Main ───────────────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- ── Sidebar ────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <!-- Server visual -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">MONITORED UNIT</div>
+      <div class="server-visual">
+        <div class="rack-unit active">
+          <div class="rack-light"></div>
+          <div class="rack-bar"><div class="rack-bar-fill" id="ru1" style="width:50%"></div></div>
+          <div class="rack-temp-badge" id="ru1t">--°</div>
+        </div>
+        <div class="rack-unit">
+          <div class="rack-light" style="background:var(--text-dim);box-shadow:none;animation:none;"></div>
+          <div class="rack-bar"><div class="rack-bar-fill" style="width:15%;opacity:0.3"></div></div>
+          <div class="rack-temp-badge" style="color:var(--text-dim)">--°</div>
+        </div>
+        <div class="rack-unit">
+          <div class="rack-light" style="background:var(--text-dim);box-shadow:none;animation:none;"></div>
+          <div class="rack-bar"><div class="rack-bar-fill" style="width:8%;opacity:0.3"></div></div>
+          <div class="rack-temp-badge" style="color:var(--text-dim)">--°</div>
+        </div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);margin-top:8px;letter-spacing:1px;">SVR-01 ACTIVE / SVR-02,03 STANDBY</div>
+      </div>
+    </div>
+
+    <!-- Live metrics gauges -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">LIVE TELEMETRY</div>
+      <div class="gauge-grid">
+
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">CPU UTIL</span>
+            <span class="gauge-value" id="g-cpu">--%</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill" id="gf-cpu" style="width:0%;background:linear-gradient(90deg,#00b4d8,#00e5ff)"></div>
+          </div>
+        </div>
+
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">MEMORY</span>
+            <span class="gauge-value" id="g-mem">--%</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill" id="gf-mem" style="width:0%;background:linear-gradient(90deg,#7c3aed,#b388ff)"></div>
+          </div>
+        </div>
+
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">FAN SPEED</span>
+            <span class="gauge-value" id="g-fan">--%</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill" id="gf-fan" style="width:0%;background:linear-gradient(90deg,#00c853,#00ff9d)"></div>
+          </div>
+        </div>
+
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">POWER</span>
+            <span class="gauge-value" id="g-pwr">-- W</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill" id="gf-pwr" style="width:0%;background:linear-gradient(90deg,#e65100,#ff6b35)"></div>
+          </div>
+        </div>
+
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">TEMP NOW</span>
+            <span class="gauge-value" id="g-tmp">--°C</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill" id="gf-tmp" style="width:0%;background:linear-gradient(90deg,#ffd600,#ff3860)"></div>
+          </div>
+        </div>
+
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">AMBIENT</span>
+            <span class="gauge-value" id="g-amb">--°C</span>
+          </div>
+          <div class="gauge-bar">
+            <div class="gauge-fill" id="gf-amb" style="width:0%;background:linear-gradient(90deg,#00897b,#00e5ff)"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Prediction card -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">NEXT-STEP PREDICTION</div>
+      <div class="pred-card">
+        <div class="pred-label">PREDICTED TEMP (t+30s)</div>
+        <div class="pred-value" id="pred-main">--<span class="pred-unit">°C</span></div>
+        <div class="pred-delta" id="pred-delta">
+          <span>—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual predict -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">MANUAL PREDICT</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>CPU %</label>
+          <input type="range" id="m-cpu" min="5" max="100" value="50" oninput="updateManual()" />
+          <div class="field-val" id="mv-cpu">50</div>
+        </div>
+        <div class="field">
+          <label>MEM %</label>
+          <input type="range" id="m-mem" min="10" max="95" value="55" oninput="updateManual()" />
+          <div class="field-val" id="mv-mem">55</div>
+        </div>
+        <div class="field">
+          <label>FAN %</label>
+          <input type="range" id="m-fan" min="10" max="100" value="50" oninput="updateManual()" />
+          <div class="field-val" id="mv-fan">50</div>
+        </div>
+        <div class="field">
+          <label>TEMP °C</label>
+          <input type="range" id="m-tmp" min="25" max="90" value="52" oninput="updateManual()" />
+          <div class="field-val" id="mv-tmp">52</div>
+        </div>
+        <div class="field">
+          <label>POWER W</label>
+          <input type="range" id="m-pwr" min="80" max="450" value="200" oninput="updateManual()" />
+          <div class="field-val" id="mv-pwr">200</div>
+        </div>
+        <div class="field">
+          <label>AMBIENT</label>
+          <input type="range" id="m-amb" min="18" max="32" value="22" oninput="updateManual()" />
+          <div class="field-val" id="mv-amb">22</div>
+        </div>
+      </div>
+      <button class="btn" onclick="manualPredict()">▶ RUN PREDICTION</button>
+      <div id="manual-result" style="margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--accent);text-align:center;min-height:16px;"></div>
+    </div>
+
+    <!-- Alert section -->
+    <div style="padding:0 16px">
+      <div class="alert-bar" id="alert-bar">
+        <span>⚠</span>
+        <span id="alert-text">THERMAL WARNING</span>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Content ─────────────────────────────────────────────────────────── -->
+  <div class="content">
+
+    <!-- KPI Row -->
+    <div class="kpi-row">
+      <div class="kpi blue">
+        <div class="kpi-label">AVG CPU UTIL</div>
+        <div class="kpi-val"><span id="kpi-cpu">--</span><span class="kpi-unit">%</span></div>
+        <div class="kpi-sub">Historical dataset</div>
+      </div>
+      <div class="kpi orange">
+        <div class="kpi-label">AVG POWER</div>
+        <div class="kpi-val"><span id="kpi-pwr">--</span><span class="kpi-unit">W</span></div>
+        <div class="kpi-sub">Historical dataset</div>
+      </div>
+      <div class="kpi green">
+        <div class="kpi-label">AVG TEMPERATURE</div>
+        <div class="kpi-val"><span id="kpi-tmp">--</span><span class="kpi-unit">°C</span></div>
+        <div class="kpi-sub">Historical dataset</div>
+      </div>
+      <div class="kpi purple">
+        <div class="kpi-label">DATASET ROWS</div>
+        <div class="kpi-val"><span id="kpi-rows">--</span></div>
+        <div class="kpi-sub">Stored records</div>
+      </div>
+    </div>
+
+    <!-- Live Charts -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">LIVE TELEMETRY STREAM</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="panel-badge" id="live-badge">STREAMING</div>
+          <button class="btn" style="width:auto;padding:4px 12px;margin:0;font-size:9px" onclick="toggleLive()">⏸ PAUSE</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <canvas id="chart-live" height="160"></canvas>
+      </div>
+    </div>
+
+    <!-- Prediction accuracy -->
+    <div class="chart-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">TEMP vs PREDICTION</div>
+          <div class="panel-badge">GBR MODEL</div>
+        </div>
+        <div class="panel-body">
+          <canvas id="chart-pred" height="180"></canvas>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">POWER &amp; FAN DYNAMICS</div>
+          <div class="panel-badge">HISTORICAL</div>
+        </div>
+        <div class="panel-body">
+          <canvas id="chart-pwr" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- History table -->
+    <div class="panel">
+      <div class="tab-row">
+        <div class="tab active" onclick="switchTab('live-tab',this)">LIVE LOG</div>
+        <div class="tab" onclick="switchTab('hist-tab',this)">HISTORY</div>
+        <div class="tab" onclick="switchTab('pred-tab',this)">PREDICTIONS</div>
+      </div>
+
+      <div class="tab-content active" id="live-tab">
+        <div class="panel-header" style="border-top:1px solid var(--border)">
+          <div class="panel-title">RECENT LIVE READINGS</div>
+          <div class="panel-badge" id="live-count">0 records</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>TIMESTAMP</th><th>CPU%</th><th>MEM%</th><th>FAN%</th><th>POWER W</th><th>TEMP °C</th><th>PREDICTED °C</th>
+              </tr>
+            </thead>
+            <tbody id="live-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-content" id="hist-tab">
+        <div class="panel-header" style="border-top:1px solid var(--border)">
+          <div class="panel-title">SYNTHETIC DATASET SAMPLE</div>
+          <div class="panel-badge">FIRST 200 ROWS</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>TIMESTAMP</th><th>CPU%</th><th>MEM%</th><th>FAN%</th><th>POWER W</th><th>TEMP °C</th><th>NEXT TEMP</th>
+              </tr>
+            </thead>
+            <tbody id="hist-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-content" id="pred-tab">
+        <div class="panel-header" style="border-top:1px solid var(--border)">
+          <div class="panel-title">PREDICTION LOG</div>
+          <div class="panel-badge">MODEL INFERENCE</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>TIMESTAMP</th><th>CPU%</th><th>POWER W</th><th>ACTUAL °C</th><th>PREDICTED °C</th><th>ΔERROR</th>
+              </tr>
+            </thead>
+            <tbody id="pred-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Retrain button -->
+    <div style="display:flex;justify-content:flex-end;gap:12px">
+      <button class="btn btn-orange" style="width:180px" onclick="retrain()">⚡ RETRAIN MODEL</button>
+    </div>
+
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+/* ── Config ──────────────────────────────────────────────────────────────── */
+const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8000'
+  : '';  // same origin in production
+
+const MAX_LIVE_POINTS = 40;
+let liveRunning = true;
+let liveData = { labels:[], temp:[], pred:[], cpu:[], fan:[], pwr:[] };
+let liveRows = [];
+
+/* ── Clock ───────────────────────────────────────────────────────────────── */
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-GB');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+/* ── Chart setup ─────────────────────────────────────────────────────────── */
+Chart.defaults.color = '#5a7090';
+Chart.defaults.borderColor = '#1a2a4a';
+Chart.defaults.font.family = "'Share Tech Mono', monospace";
+Chart.defaults.font.size = 10;
+
+function makeChart(id, datasets, yLabel='', type='line') {
+  const ctx = document.getElementById(id).getContext('2d');
+  return new Chart(ctx, {
+    type,
+    data: { labels: [], datasets },
+    options: {
+      responsive: true,
+      animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: datasets.length > 1, labels: { boxWidth: 10, padding: 16 } },
+        tooltip: { backgroundColor: '#0b1225', borderColor: '#1a2a4a', borderWidth: 1 }
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 8, maxRotation: 0 }, grid: { color: 'rgba(26,42,74,0.5)' } },
+        y: { title: { display: !!yLabel, text: yLabel }, grid: { color: 'rgba(26,42,74,0.5)' } }
+      }
+    }
+  });
+}
+
+const chartLive = makeChart('chart-live', [
+  { label:'TEMP (°C)', data:[], borderColor:'#ff6b35', backgroundColor:'rgba(255,107,53,0.08)', tension:0.4, fill:true, pointRadius:0, borderWidth:1.5 },
+  { label:'PREDICTED (°C)', data:[], borderColor:'#00e5ff', backgroundColor:'rgba(0,229,255,0.06)', tension:0.4, fill:true, pointRadius:0, borderWidth:1.5, borderDash:[4,3] },
+  { label:'CPU% ×0.9', data:[], borderColor:'#b388ff', tension:0.4, fill:false, pointRadius:0, borderWidth:1, yAxisID:'y1' }
+], 'Temperature (°C)');
+
+// Add second Y axis for CPU
+chartLive.options.scales.y1 = {
+  position: 'right',
+  grid: { drawOnChartArea: false },
+  ticks: { color: '#5a7090', callback: v => v+'%' }
+};
+chartLive.update();
+
+const chartPred = makeChart('chart-pred', [
+  { label:'ACTUAL TEMP', data:[], borderColor:'#ff6b35', tension:0.4, fill:false, pointRadius:0, borderWidth:1.5 },
+  { label:'PREDICTED', data:[], borderColor:'#00e5ff', tension:0.4, fill:false, pointRadius:0, borderWidth:1.5, borderDash:[4,3] }
+]);
+
+const chartPwr = makeChart('chart-pwr', [
+  { label:'POWER (W)', data:[], borderColor:'#ffd600', backgroundColor:'rgba(255,214,0,0.06)', tension:0.4, fill:true, pointRadius:0, borderWidth:1.5 },
+  { label:'FAN %', data:[], borderColor:'#00ff9d', tension:0.4, fill:false, pointRadius:0, borderWidth:1, yAxisID:'y1' }
+]);
+chartPwr.options.scales.y1 = {
+  position: 'right', grid: { drawOnChartArea: false },
+  ticks: { color: '#5a7090', callback: v => v+'%' }
+};
+chartPwr.update();
+
+/* ── Tab switching ───────────────────────────────────────────────────────── */
+function switchTab(id, el) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  el.classList.add('active');
+
+  if (id === 'hist-tab') loadHistory();
+  if (id === 'pred-tab') loadPredictions();
+}
+
+/* ── Stats ───────────────────────────────────────────────────────────────── */
+async function loadStats() {
+  try {
+    const r = await fetch(`${API}/api/stats`);
+    const d = await r.json();
+    document.getElementById('kpi-cpu').textContent  = d.avg_cpu_util.toFixed(1);
+    document.getElementById('kpi-pwr').textContent  = d.avg_power_w.toFixed(0);
+    document.getElementById('kpi-tmp').textContent  = d.avg_temperature.toFixed(1);
+    document.getElementById('kpi-rows').textContent = d.total_records.toLocaleString();
+
+    if (d.model_ready) {
+      document.getElementById('model-status').innerHTML =
+        '<div class="status-dot" style="background:var(--green);box-shadow:0 0 8px var(--green)"></div><span>MODEL READY</span>';
+    }
+  } catch(e) {
+    console.warn('Stats fetch failed', e);
+  }
+}
+
+/* ── Live polling ────────────────────────────────────────────────────────── */
+async function pollLive() {
+  if (!liveRunning) return;
+  try {
+    const r = await fetch(`${API}/api/live`);
+    const d = await r.json();
+
+    // Update sidebar gauges
+    const cpu = d.cpu_util, mem = d.mem_util, fan = d.fan_speed;
+    const pwr = d.power_w, tmp = d.temperature, amb = d.ambient_temp;
+    const pred = d.predicted_temperature;
+
+    document.getElementById('g-cpu').textContent = cpu.toFixed(1)+'%';
+    document.getElementById('g-mem').textContent = mem.toFixed(1)+'%';
+    document.getElementById('g-fan').textContent = fan.toFixed(1)+'%';
+    document.getElementById('g-pwr').textContent = pwr.toFixed(0)+' W';
+    document.getElementById('g-tmp').textContent = tmp.toFixed(1)+'°C';
+    document.getElementById('g-amb').textContent = amb.toFixed(1)+'°C';
+
+    document.getElementById('gf-cpu').style.width = cpu+'%';
+    document.getElementById('gf-mem').style.width = mem+'%';
+    document.getElementById('gf-fan').style.width = fan+'%';
+    document.getElementById('gf-pwr').style.width = Math.min(100, (pwr-80)/3.7)+'%';
+    document.getElementById('gf-tmp').style.width = Math.min(100, (tmp-20)/75*100)+'%';
+    document.getElementById('gf-amb').style.width = Math.min(100, (amb-15)/20*100)+'%';
+
+    // Rack unit
+    document.getElementById('ru1').style.width = cpu+'%';
+    document.getElementById('ru1t').textContent = tmp.toFixed(0)+'°';
+
+    // Prediction display
+    const prevPred = parseFloat(document.getElementById('pred-main').textContent) || pred;
+    document.getElementById('pred-main').innerHTML = pred.toFixed(1)+'<span class="pred-unit">°C</span>';
+    const delta = pred - tmp;
+    const deltaEl = document.getElementById('pred-delta');
+    const sign = delta > 0 ? '+' : '';
+    const cls = delta > 0.5 ? 'delta-up' : delta < -0.5 ? 'delta-down' : 'delta-flat';
+    deltaEl.innerHTML = `<span class="${cls}">${sign}${delta.toFixed(2)}°C vs now</span>`;
+
+    // Thermal alert
+    const alertBar = document.getElementById('alert-bar');
+    if (tmp > 75) {
+      alertBar.classList.add('show');
+      document.getElementById('alert-text').textContent = `THERMAL WARNING — ${tmp.toFixed(1)}°C EXCEEDS THRESHOLD`;
+    } else {
+      alertBar.classList.remove('show');
+    }
+
+    // Live chart
+    const ts = new Date(d.timestamp).toLocaleTimeString('en-GB');
+    liveData.labels.push(ts);
+    liveData.temp.push(tmp);
+    liveData.pred.push(pred);
+    liveData.cpu.push(cpu * 0.9);
+    liveData.pwr.push(pwr);
+    liveData.fan.push(fan);
+
+    if (liveData.labels.length > MAX_LIVE_POINTS) {
+      liveData.labels.shift(); liveData.temp.shift(); liveData.pred.shift();
+      liveData.cpu.shift(); liveData.pwr.shift(); liveData.fan.shift();
+    }
+
+    chartLive.data.labels = liveData.labels;
+    chartLive.data.datasets[0].data = liveData.temp;
+    chartLive.data.datasets[1].data = liveData.pred;
+    chartLive.data.datasets[2].data = liveData.cpu;
+    chartLive.update('none');
+
+    chartPwr.data.labels = liveData.labels;
+    chartPwr.data.datasets[0].data = liveData.pwr;
+    chartPwr.data.datasets[1].data = liveData.fan;
+    chartPwr.update('none');
+
+    // Live table row
+    liveRows.unshift(d);
+    if (liveRows.length > 50) liveRows.pop();
+    renderLiveTable();
+
+  } catch(e) {
+    console.warn('Live poll failed', e);
+  }
+}
+
+function renderLiveTable() {
+  const tbody = document.getElementById('live-tbody');
+  document.getElementById('live-count').textContent = liveRows.length + ' records';
+  tbody.innerHTML = liveRows.slice(0, 30).map(d => {
+    const tmpCls = d.temperature > 75 ? 'hot' : d.temperature > 65 ? 'warm' : 'cool';
+    return `<tr>
+      <td>${new Date(d.timestamp).toLocaleTimeString('en-GB')}</td>
+      <td>${d.cpu_util.toFixed(1)}</td>
+      <td>${d.mem_util.toFixed(1)}</td>
+      <td>${d.fan_speed.toFixed(1)}</td>
+      <td>${d.power_w.toFixed(0)}</td>
+      <td class="${tmpCls}">${d.temperature.toFixed(2)}</td>
+      <td class="pred">${d.predicted_temperature.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── History ─────────────────────────────────────────────────────────────── */
+async function loadHistory() {
+  try {
+    const r = await fetch(`${API}/api/metrics?limit=200&source=synthetic`);
+    const rows = await r.json();
+    const tbody = document.getElementById('hist-tbody');
+    tbody.innerHTML = rows.map(d => {
+      const tmpCls = d.temperature > 75 ? 'hot' : d.temperature > 65 ? 'warm' : 'cool';
+      return `<tr>
+        <td>${new Date(d.timestamp).toLocaleString('en-GB')}</td>
+        <td>${d.cpu_util.toFixed(1)}</td>
+        <td>${d.mem_util.toFixed(1)}</td>
+        <td>${d.fan_speed.toFixed(1)}</td>
+        <td>${d.power_w.toFixed(0)}</td>
+        <td class="${tmpCls}">${d.temperature.toFixed(2)}</td>
+        <td class="pred">${d.next_temperature?.toFixed(2) ?? '—'}</td>
+      </tr>`;
+    }).join('');
+
+    // Update pred chart with synthetic data (sample every 20 for readability)
+    const sampled = rows.filter((_,i) => i % 10 === 0);
+    chartPred.data.labels = sampled.map(d => new Date(d.timestamp).toLocaleTimeString('en-GB'));
+    chartPred.data.datasets[0].data = sampled.map(d => d.temperature);
+    chartPred.data.datasets[1].data = sampled.map(d => d.next_temperature);
+    chartPred.update();
+
+  } catch(e) { console.warn(e); }
+}
+
+/* ── Prediction log ──────────────────────────────────────────────────────── */
+async function loadPredictions() {
+  try {
+    const r = await fetch(`${API}/api/predictions?limit=100`);
+    const rows = await r.json();
+    const tbody = document.getElementById('pred-tbody');
+    tbody.innerHTML = rows.reverse().map(d => {
+      const err = (d.predicted_temperature - d.temperature).toFixed(2);
+      const errCls = Math.abs(err) > 2 ? 'hot' : Math.abs(err) > 1 ? 'warm' : 'cool';
+      return `<tr>
+        <td>${new Date(d.timestamp).toLocaleTimeString('en-GB')}</td>
+        <td>${d.cpu_util?.toFixed(1) ?? '—'}</td>
+        <td>${d.power_w?.toFixed(0) ?? '—'}</td>
+        <td>${d.temperature?.toFixed(2) ?? '—'}</td>
+        <td class="pred">${d.predicted_temperature.toFixed(2)}</td>
+        <td class="${errCls}">${err > 0 ? '+' : ''}${err}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.warn(e); }
+}
+
+/* ── Manual predict ──────────────────────────────────────────────────────── */
+function updateManual() {
+  ['cpu','mem','fan','tmp','pwr','amb'].forEach(k => {
+    const el = document.getElementById(`m-${k}`);
+    document.getElementById(`mv-${k}`).textContent = el.value;
+  });
+}
+
+async function manualPredict() {
+  const payload = {
+    cpu_util:    parseFloat(document.getElementById('m-cpu').value),
+    mem_util:    parseFloat(document.getElementById('m-mem').value),
+    fan_speed:   parseFloat(document.getElementById('m-fan').value),
+    temperature: parseFloat(document.getElementById('m-tmp').value),
+    power_w:     parseFloat(document.getElementById('m-pwr').value),
+    ambient_temp:parseFloat(document.getElementById('m-amb').value),
+  };
+  const res = document.getElementById('manual-result');
+  res.innerHTML = '<span class="spinner"></span> computing…';
+  try {
+    const r = await fetch(`${API}/api/predict`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    res.innerHTML = `→ PREDICTED TEMP: <strong style="color:var(--accent)">${d.predicted_temperature.toFixed(2)} °C</strong>`;
+  } catch(e) {
+    res.innerHTML = '<span style="color:var(--red)">ERROR — backend unreachable</span>';
+  }
+}
+
+/* ── Retrain ─────────────────────────────────────────────────────────────── */
+async function retrain() {
+  if (!confirm('Retrain model on all stored data? This may take a few seconds.')) return;
+  try {
+    const r = await fetch(`${API}/api/retrain`, { method:'POST' });
+    const d = await r.json();
+    alert(`Model retrained on ${d.rows_used} rows.`);
+    loadStats();
+  } catch(e) {
+    alert('Retrain failed — check backend.');
+  }
+}
+
+/* ── Pause/resume ────────────────────────────────────────────────────────── */
+function toggleLive() {
+  liveRunning = !liveRunning;
+  const btn = event.target;
+  const badge = document.getElementById('live-badge');
+  if (liveRunning) {
+    btn.textContent = '⏸ PAUSE';
+    badge.textContent = 'STREAMING';
+    badge.style.borderColor = '';
+  } else {
+    btn.textContent = '▶ RESUME';
+    badge.textContent = 'PAUSED';
+    badge.style.borderColor = 'var(--text-dim)';
+  }
+}
+
+/* ── Init ────────────────────────────────────────────────────────────────── */
+loadStats();
+loadHistory();  // pre-load so pred chart is populated
+
+setInterval(pollLive, 2000);
+pollLive();
+
+setTimeout(loadStats, 5000);  // refresh after model may have loaded
+</script>
+</body>
+</html>
