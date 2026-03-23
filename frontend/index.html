@@ -973,9 +973,7 @@ td.pred  { color: var(--accent); font-weight: bold; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 /* ── Config ──────────────────────────────────────────────────────────────── */
-const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:8000'
-  : '';  // same origin in production
+const API = 'https://digital-twin-backend-xxx.up.railway.app';
 
 const MAX_LIVE_POINTS = 40;
 let liveRunning = true;
