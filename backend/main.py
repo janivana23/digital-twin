@@ -30,7 +30,9 @@ from ml import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    _bootstrap()
+    import threading
+    t = threading.Thread(target=_bootstrap, daemon=True)
+    t.start()
     yield
 
 
@@ -268,7 +270,9 @@ def get_recent_metrics(
 
 @app.post("/api/predict", response_model=dict)
 def predict_endpoint(req: PredictRequest):
-    model = app.state.model
+    model = getattr(app.state, 'model', None)
+    if model is None:
+        raise HTTPException(503, "Model is still loading, please retry in a moment.")
     feat = {
         "cpu_util": req.cpu_util,
         "mem_util": req.mem_util,
@@ -283,6 +287,9 @@ def predict_endpoint(req: PredictRequest):
 
 @app.get("/api/live", response_model=LiveStateOut)
 def get_live(db: Session = Depends(get_db)):
+    model = getattr(app.state, 'model', None)
+    if model is None:
+        raise HTTPException(503, "Model is still loading, please retry in a moment.")
     _tick_live_state()
     s = _live_state.copy()
     model = app.state.model
